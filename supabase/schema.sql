@@ -58,14 +58,7 @@ create table if not exists public.app_settings (
   date_format text not null default 'DD/MM/YYYY',
   week_start text not null default 'monday',
   theme text not null default 'system',
-  summary_format jsonb not null default '{
-    "header": "SEMANAL:",
-    "currencyPrefix": "$",
-    "totalSuffix": "USD",
-    "decimalSeparator": ",",
-    "hideQuantityForCboWhenOne": true,
-    "dateSeparator": "/"
-  }'::jsonb
+  summary_format jsonb not null default '{}'::jsonb
 );
 
 create index if not exists work_entries_user_date_idx on public.work_entries (user_id, date);
@@ -96,6 +89,8 @@ create policy "app_settings_own" on public.app_settings for all
 
 -- ---------- Al registrarse un usuario nuevo, sembrar sus datos iniciales ----------
 -- Tarifas y niveles tomados de la tabla de referencia de la agencia.
+-- (summary_format y custom_rates quedan con su default simple; la app
+-- completa los valores de formato razonables automáticamente al leerlos.)
 
 create or replace function public.handle_new_user()
 returns trigger
@@ -103,11 +98,8 @@ language plpgsql
 security definer set search_path = public
 as $$
 begin
-  insert into public.rates (user_id, h_rate, g_rate, cbo_rate, currency, custom_rates)
-  values (
-    new.id, 5, 7.3, 22, 'USD',
-    '[{"id":"opcion-b","label":"Opción B (9 ads individuales / 9 cuerpos + 9 hooks)","amount":45,"currency":"USD"}]'::jsonb
-  );
+  insert into public.rates (user_id, h_rate, g_rate, cbo_rate, currency)
+  values (new.id, 5, 7.3, 22, 'USD');
 
   insert into public.app_settings (user_id) values (new.id);
 

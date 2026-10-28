@@ -90,14 +90,22 @@ interface SettingsRow {
   date_format: AppSettings['dateFormat']
   week_start: AppSettings['weekStart']
   theme: AppSettings['theme']
-  summary_format: AppSettings['summaryFormat']
+  summary_format: Partial<AppSettings['summaryFormat']> | null
+}
+const DEFAULT_SUMMARY_FORMAT: AppSettings['summaryFormat'] = {
+  header: 'SEMANAL:',
+  currencyPrefix: '$',
+  totalSuffix: 'USD',
+  decimalSeparator: ',',
+  hideQuantityForCboWhenOne: true,
+  dateSeparator: '/',
 }
 const settingsFromRow = (r: SettingsRow): AppSettings => ({
   currency: r.currency,
   dateFormat: r.date_format,
   weekStart: r.week_start,
   theme: r.theme,
-  summaryFormat: r.summary_format,
+  summaryFormat: { ...DEFAULT_SUMMARY_FORMAT, ...(r.summary_format ?? {}) },
 })
 
 // ---- Reads ----
