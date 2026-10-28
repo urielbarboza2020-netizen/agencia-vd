@@ -8,9 +8,11 @@ import {
   DollarSign,
   Settings as SettingsIcon,
   Clapperboard,
+  LogOut,
 } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 import { useUI } from '../context/UIContext'
+import { useAuth } from '../context/AuthContext'
 
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -24,6 +26,7 @@ const NAV_ITEMS = [
 
 export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const { openWorkForm } = useUI()
+  const { user, signOut } = useAuth()
 
   return (
     <div className="flex h-full flex-col">
@@ -75,8 +78,19 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         ))}
       </nav>
 
-      <div className="border-t border-ink-100 px-5 py-4 text-xs text-ink-400 dark:border-ink-800">
-        Tus datos se guardan en este dispositivo.
+      <div className="border-t border-ink-100 px-4 py-3 dark:border-ink-800">
+        <div className="flex items-center justify-between gap-2 rounded-lg px-1 py-1">
+          <p className="truncate text-xs text-ink-400" title={user?.email ?? ''}>
+            {user?.email}
+          </p>
+          <button
+            onClick={() => signOut()}
+            title="Cerrar sesión"
+            className="shrink-0 rounded-md p-1.5 text-ink-400 hover:bg-ink-100 hover:text-red-600 dark:hover:bg-ink-800"
+          >
+            <LogOut size={15} />
+          </button>
+        </div>
       </div>
     </div>
   )

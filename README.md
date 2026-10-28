@@ -1,32 +1,32 @@
-# React + TypeScript + Vite
+# Agencia VD — Control de producción y pagos
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Plataforma para registrar trabajos de edición (H, G, CBO), calcular pagos automáticamente por marca y tanda, y generar resúmenes semanales/mensuales listos para copiar. Multi-usuario: cada persona se registra con su email y ve únicamente sus propios datos.
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- React + TypeScript + Vite
+- Tailwind CSS v4
+- Supabase (Postgres + Auth) como backend
+- React Router (HashRouter, compatible con cualquier hosting estático)
 
-## React Compiler
+## Configuración local
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+1. `npm install`
+2. Creá un proyecto en [supabase.com](https://supabase.com) (gratis).
+3. En el **SQL Editor** de Supabase, corré el contenido de [`supabase/schema.sql`](supabase/schema.sql).
+4. Copiá `.env.example` a `.env.local` y completá con los datos de tu proyecto (Settings → API):
+   ```
+   VITE_SUPABASE_URL=https://tu-proyecto.supabase.co
+   VITE_SUPABASE_ANON_KEY=tu-anon-key-publica
+   ```
+5. `npm run dev`
 
-## Expanding the Oxlint configuration
+## Despliegue en Vercel
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+1. Importá este repositorio en [vercel.com](https://vercel.com) (framework preset: Vite).
+2. En **Project Settings → Environment Variables**, agregá `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY`.
+3. Deploy.
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
-```
+## Base de datos
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+El esquema (`supabase/schema.sql`) crea las tablas `brands`, `work_entries`, `rates`, `production_levels` y `app_settings`, todas con Row Level Security: cada usuario solo puede leer y escribir sus propias filas (`auth.uid() = user_id`). Al registrarse un usuario nuevo, un trigger siembra automáticamente sus tarifas, niveles de producción y marcas iniciales.

@@ -1,20 +1,24 @@
 import { useRef, useState } from 'react'
-import { Download, Upload, AlertTriangle } from 'lucide-react'
+import { Download, Upload, AlertTriangle, Loader2 } from 'lucide-react'
 import { useApp } from '../context/AppContext'
+import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { Button, Card, ConfirmDialog, Field, inputClass } from '../components/ui'
-import { buildBackup, downloadTextFile, restoreBackup, type BackupPayload } from '../lib/storage'
+import { buildBackup, downloadTextFile, type BackupPayload } from '../lib/storage'
 import { todayISO } from '../lib/dateUtils'
+import { wipeUserData } from '../lib/db'
 
 export function SettingsPage() {
-  const { settings, updateSettings } = useApp()
+  const { entries, brands, rates, levels, settings, updateSettings, restoreFromBackup } = useApp()
+  const { user } = useAuth()
   const { push } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [pendingRestore, setPendingRestore] = useState<BackupPayload | null>(null)
   const [confirmReset, setConfirmReset] = useState(false)
+  const [busy, setBusy] = useState(false)
 
   const handleExportBackup = () => {
-    const backup = buildBackup()
+    const backup = buildBackup({ entries, brands, rates, levels, settings })
     downloadTextFile(`backup_agencia_vd_${todayISO()}.json`, JSON.stringify(backup, null, 2), 'application/json')
     push('Copia de seguridad descargada')
   }
@@ -35,21 +39,30 @@ export function SettingsPage() {
     e.target.value = ''
   }
 
-  const confirmRestore = () => {
+  const confirmRestore = async () => {
     if (!pendingRestore) return
-    try {
-      restoreBackup(pendingRestore)
-      push('Backup restaurado. Recargando la aplicación...')
-      setTimeout(() => window.location.reload(), 1200)
-    } catch {
-      push('No se pudo restaurar el backup', 'error')
-    }
+    const payload = pendingRestore
     setPendingRestore(null)
+    setBusy(true)
+    try {
+      await restoreFromBackup(payload)
+      push('Backup restaurado correctamente')
+    } catch (err) {
+      push(`No se pudo restaurar el backup: ${(err as Error).message}`, 'error')
+    }
+    setBusy(false)
   }
 
-  const handleReset = () => {
-    localStorage.clear()
-    window.location.reload()
+  const handleReset = async () => {
+    if (!user) return
+    setBusy(true)
+    try {
+      await wipeUserData(user.id)
+      window.location.reload()
+    } catch (err) {
+      push(`No se pudo borrar: ${(err as Error).message}`, 'error')
+      setBusy(false)
+    }
   }
 
   return (
@@ -167,8 +180,8 @@ export function SettingsPage() {
       <Card>
         <h3 className="mb-1 text-sm font-semibold text-ink-900 dark:text-white">Exportación y copias de seguridad</h3>
         <p className="mb-4 text-xs text-ink-400">
-          Tus datos viven en el almacenamiento local de este navegador. Descargá backups periódicamente para no
-          perderlos y para pasarlos a otro dispositivo (computadora o celular).
+          Tus datos viven en tu cuenta (en la nube) y se sincronizan automáticamente entre tu computadora y tu
+          celular. Igual podés descargar un backup periódicamente como respaldo extra.
         </p>
         <div className="flex flex-wrap gap-2">
           <Button onClick={handleExportBackup}>
@@ -189,10 +202,11 @@ export function SettingsPage() {
           <div className="flex-1">
             <h3 className="text-sm font-semibold text-ink-900 dark:text-white">Zona de riesgo</h3>
             <p className="mt-1 text-xs text-ink-400">
-              Borra todos los trabajos, marcas, tarifas y configuración de este dispositivo. Hacé un backup antes si
-              no estás seguro.
+              Borra todos tus trabajos, marcas y niveles guardados en la nube. Hacé un backup antes si no estás
+              seguro. Tu cuenta y tu acceso no se eliminan.
             </p>
-            <Button variant="danger" className="mt-3" onClick={() => setConfirmReset(true)}>
+            <Button variant="danger" className="mt-3" onClick={() => setConfirmReset(true)} disabled={busy}>
+              {busy && <Loader2 size={15} className="animate-spin" />}
               Borrar todos los datos
             </Button>
           </div>
