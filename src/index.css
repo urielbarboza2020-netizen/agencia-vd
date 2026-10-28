@@ -1,0 +1,104 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme {
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --color-brand-50: #eef4ff;
+  --color-brand-100: #dce8ff;
+  --color-brand-200: #b8d0ff;
+  --color-brand-300: #85aeff;
+  --color-brand-400: #4c82ff;
+  --color-brand-500: #1a56ff;
+  --color-brand-600: #0a3fe0;
+  --color-brand-700: #0831b3;
+  --color-brand-800: #0a2a8a;
+  --color-brand-900: #0c266b;
+  --color-brand-950: #081645;
+
+  --color-ink-50: #f5f6f8;
+  --color-ink-100: #e7e9ee;
+  --color-ink-200: #cdd2dc;
+  --color-ink-300: #a3abbc;
+  --color-ink-400: #727c93;
+  --color-ink-500: #4f5875;
+  --color-ink-600: #3a4260;
+  --color-ink-700: #2a2f49;
+  --color-ink-800: #181b2e;
+  --color-ink-900: #0d0f1c;
+  --color-ink-950: #06070f;
+
+  --shadow-card: 0 1px 2px rgba(13, 15, 28, 0.04), 0 8px 24px -12px rgba(13, 15, 28, 0.12);
+  --shadow-card-dark: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px -12px rgba(0, 0, 0, 0.55);
+}
+
+:root {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: var(--color-brand-200);
+  color: var(--color-brand-950);
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: var(--color-ink-300);
+  border-radius: 999px;
+}
+:root[data-theme="dark"] .scrollbar-thin::-webkit-scrollbar-thumb {
+  background: var(--color-ink-700);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-in {
+  animation: fade-in 0.18s ease-out;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.animate-toast-in {
+  animation: toast-in 0.2s ease-out;
+}
