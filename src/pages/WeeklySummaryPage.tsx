@@ -1,15 +1,18 @@
 import { useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, Clipboard, Download, Sparkles } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Clipboard, Download, FileText, Sparkles } from 'lucide-react'
 import { useApp } from '../context/AppContext'
+import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { Badge, Button, Card, EmptyState } from '../components/ui'
 import { formatMoney } from '../lib/calculations'
 import { addDays, formatShortDate, getWeekLabel, getWeekRange, isDateInRange, compareISODates } from '../lib/dateUtils'
 import { generateWeeklySummary } from '../lib/summary'
 import { downloadTextFile } from '../lib/storage'
+import { generateWorkPdf } from '../lib/pdf'
 
 export function WeeklySummaryPage() {
   const { entries, settings } = useApp()
+  const { user } = useAuth()
   const { push } = useToast()
   const [refDate, setRefDate] = useState(new Date())
   const [summaryText, setSummaryText] = useState<string | null>(null)
@@ -58,6 +61,19 @@ export function WeeklySummaryPage() {
     if (!summaryText) return
     downloadTextFile(`resumen_semanal_${formatShortDate(getIsoFromDate(start)).replace('/', '-')}.txt`, summaryText)
     push('Resumen descargado como TXT')
+  }
+
+  const handleDownloadPdf = () => {
+    if (weekEntries.length === 0) return
+    generateWorkPdf({
+      title: 'Resumen semanal',
+      periodLabel: getWeekLabel(start, end),
+      entries: weekEntries,
+      settings,
+      userEmail: user?.email,
+      fileName: `resumen_semanal_${formatShortDate(getIsoFromDate(start)).replace('/', '-')}.pdf`,
+    })
+    push('PDF descargado')
   }
 
   return (
@@ -111,10 +127,14 @@ export function WeeklySummaryPage() {
         )}
       </Card>
 
-      <div className="flex justify-center">
+      <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
         <Button onClick={handleGenerate} disabled={weekEntries.length === 0} className="px-8 py-3 text-base">
           <Sparkles size={18} />
           GENERAR RESUMEN SEMANAL
+        </Button>
+        <Button variant="secondary" onClick={handleDownloadPdf} disabled={weekEntries.length === 0} className="px-6 py-3 text-base">
+          <FileText size={18} />
+          Descargar PDF
         </Button>
       </div>
 
