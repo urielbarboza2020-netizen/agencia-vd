@@ -15,7 +15,12 @@ export interface NewEntryInput {
   quantity: number
   batch?: string
   notes?: string
-  overrideTotal?: number
+  /**
+   * Precio por unidad propio de este trabajo: el total se calcula como cantidad × este valor.
+   * `null` al editar significa volver a la tarifa general.
+   */
+  overrideUnitRate?: number | null
+  overrideTotal?: number | null
 }
 
 interface AppContextValue {
@@ -190,9 +195,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }
 
   const addEntry: AppContextValue['addEntry'] = (input) => {
-    const unitRate = getUnitRate(input.type, rates)
-    const computed = computeAmount(input.type, input.quantity, rates)
-    const total = input.overrideTotal !== undefined ? roundMoney(input.overrideTotal) : computed
+    // Un precio propio manda sobre la tarifa general: el total se recalcula con él.
+    const hasRateOverride = typeof input.overrideUnitRate === 'number'
+    const hasTotalOverride = typeof input.overrideTotal === 'number'
+    const unitRate = hasRateOverride ? roundMoney(input.overrideUnitRate as number) : getUnitRate(input.type, rates)
+    const total = hasTotalOverride
+      ? roundMoney(input.overrideTotal as number)
+      : hasRateOverride
+        ? roundMoney(input.quantity * unitRate)
+        : computeAmount(input.type, input.quantity, rates)
     const now = new Date().toISOString()
     const entry: WorkEntry = {
       id: crypto.randomUUID(),
@@ -205,7 +216,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       unitRate,
       currency: rates.currency,
       total,
-      overridden: input.overrideTotal !== undefined,
+      overridden: hasRateOverride || hasTotalOverride,
       notes: input.notes?.trim() || undefined,
       createdAt: now,
       updatedAt: now,
@@ -224,25 +235,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setEntries((prev) =>
       prev.map((e) => {
         if (e.id !== id) return e
+        const { overrideUnitRate: newRate, overrideTotal: newTotal, ...fields } = patch
         const type = patch.type ?? e.type
         const quantity = patch.quantity ?? e.quantity
-        const shouldRecompute = patch.overrideTotal === undefined && (patch.type !== undefined || patch.quantity !== undefined)
-        const total =
-          patch.overrideTotal !== undefined
-            ? roundMoney(patch.overrideTotal)
+
+        const hasRateOverride = typeof newRate === 'number'
+        const hasTotalOverride = typeof newTotal === 'number'
+        // null = se destildó el importe propio, así que vuelve a mandar la tarifa general.
+        const clearsOverride = newRate === null || newTotal === null
+        const changedShape = patch.type !== undefined || patch.quantity !== undefined
+        const shouldRecompute = !hasRateOverride && !hasTotalOverride && (clearsOverride || changedShape)
+
+        const unitRate = hasRateOverride
+          ? roundMoney(newRate)
+          : shouldRecompute
+            ? getUnitRate(type, rates)
+            : e.unitRate
+        const total = hasTotalOverride
+          ? roundMoney(newTotal)
+          : hasRateOverride
+            ? roundMoney(quantity * unitRate)
             : shouldRecompute
               ? computeAmount(type, quantity, rates)
               : e.total
-        const unitRate = shouldRecompute ? getUnitRate(type, rates) : e.unitRate
+
         updated = {
           ...e,
-          ...patch,
+          ...fields,
           type,
           quantity,
           batch: patch.batch !== undefined ? patch.batch?.trim() || undefined : e.batch,
           total,
           unitRate,
-          overridden: patch.overrideTotal !== undefined ? true : e.overridden,
+          overridden: hasRateOverride || hasTotalOverride ? true : clearsOverride ? false : e.overridden,
           updatedAt: new Date().toISOString(),
         }
         return updated

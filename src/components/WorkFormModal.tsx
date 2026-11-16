@@ -5,15 +5,21 @@ import { useUI } from '../context/UIContext'
 import { useToast } from '../context/ToastContext'
 import { Button, Field, Modal, inputClass } from './ui'
 import { BrandCombobox } from './BrandCombobox'
-import { computeAmount, formatMoney, getUnitRate, WORK_TYPE_LABELS } from '../lib/calculations'
+import { computeAmount, formatMoney, getUnitRate, roundMoney, WORK_TYPE_LABELS } from '../lib/calculations'
 import { todayISO } from '../lib/dateUtils'
 import type { WorkType } from '../types'
 
 const TYPE_OPTIONS: WorkType[] = ['H', 'G', 'CBO']
 
+/** Acepta coma o punto como separador decimal. */
+function parseNum(value: string): number {
+  return Number(value.replace(',', '.'))
+}
+
 export function WorkFormModal() {
   const { isWorkFormOpen, editingEntryId, closeWorkForm } = useUI()
-  const { entries, rates, findOrCreateBrand, addEntry, updateEntry, findPossibleDuplicate, batchesForBrand } = useApp()
+  const { entries, rates, findOrCreateBrand, addEntry, updateEntry, updateRates, findPossibleDuplicate, batchesForBrand } =
+    useApp()
   const { push } = useToast()
 
   const editingEntry = useMemo(() => entries.find((e) => e.id === editingEntryId) ?? null, [entries, editingEntryId])
@@ -25,7 +31,9 @@ export function WorkFormModal() {
   const [batch, setBatch] = useState('')
   const [notes, setNotes] = useState('')
   const [useOverride, setUseOverride] = useState(false)
+  const [overrideRate, setOverrideRate] = useState('')
   const [overrideTotal, setOverrideTotal] = useState('')
+  const [syncGlobalRate, setSyncGlobalRate] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [duplicateAck, setDuplicateAck] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -40,6 +48,7 @@ export function WorkFormModal() {
       setBatch(editingEntry.batch ?? '')
       setNotes(editingEntry.notes ?? '')
       setUseOverride(editingEntry.overridden)
+      setOverrideRate(editingEntry.overridden ? String(editingEntry.unitRate) : '')
       setOverrideTotal(editingEntry.overridden ? String(editingEntry.total) : '')
     } else {
       setDate(todayISO())
@@ -49,16 +58,66 @@ export function WorkFormModal() {
       setBatch('')
       setNotes('')
       setUseOverride(false)
+      setOverrideRate('')
       setOverrideTotal('')
     }
+    setSyncGlobalRate(false)
     setErrors({})
     setDuplicateAck(false)
   }, [isWorkFormOpen, editingEntry])
 
+  // Inline a propósito: envolverlo en parseNum hace que el React Compiler
+  // deje de optimizar el componente (warning preserve-manual-memoization).
   const qtyNumber = Number(quantity.replace(',', '.'))
   const unitRate = getUnitRate(type, rates)
   const computedTotal = Number.isFinite(qtyNumber) && qtyNumber > 0 ? computeAmount(type, qtyNumber, rates) : 0
-  const previewTotal = useOverride ? Number(overrideTotal.replace(',', '.')) || 0 : computedTotal
+  const customRate = parseNum(overrideRate)
+  const hasCustomRate = useOverride && Number.isFinite(customRate)
+  const effectiveRate = hasCustomRate ? customRate : unitRate
+  const rateDiff = hasCustomRate ? roundMoney(customRate - unitRate) : 0
+  const previewTotal = useOverride ? parseNum(overrideTotal) || 0 : computedTotal
+
+  /** El precio y el total quedan atados: tocás uno y el otro se recalcula. */
+  const handleRateChange = (value: string) => {
+    setOverrideRate(value)
+    const rate = parseNum(value)
+    if (Number.isFinite(rate) && qtyNumber > 0) setOverrideTotal(String(roundMoney(qtyNumber * rate)))
+  }
+
+  const handleTotalChange = (value: string) => {
+    setOverrideTotal(value)
+    const total = parseNum(value)
+    if (Number.isFinite(total) && qtyNumber > 0) setOverrideRate(String(roundMoney(total / qtyNumber)))
+  }
+
+  const handleQuantityChange = (value: string) => {
+    setQuantity(value)
+    const qty = parseNum(value)
+    const rate = parseNum(overrideRate)
+    if (useOverride && Number.isFinite(qty) && qty > 0 && Number.isFinite(rate)) {
+      setOverrideTotal(String(roundMoney(qty * rate)))
+    }
+  }
+
+  const handleTypeChange = (next: WorkType) => {
+    setType(next)
+    // El precio propio es de un tipo concreto, así que al cambiarlo arrancamos de su tarifa general.
+    if (!useOverride) return
+    const rate = getUnitRate(next, rates)
+    setOverrideRate(String(rate))
+    setOverrideTotal(String(qtyNumber > 0 ? roundMoney(qtyNumber * rate) : 0))
+  }
+
+  const toggleOverride = (on: boolean) => {
+    setUseOverride(on)
+    if (on) {
+      // Prellenamos con la tarifa general para que solo haya que corregir el número.
+      setOverrideRate(String(unitRate))
+      setOverrideTotal(String(computedTotal))
+    } else {
+      setSyncGlobalRate(false)
+    }
+  }
 
   const batchSuggestions = useMemo(() => {
     const brand = entries.find((e) => e.brandName.toLowerCase() === brandName.trim().toLowerCase())
@@ -84,8 +143,11 @@ export function WorkFormModal() {
     if (!date) next.date = 'Elegí una fecha'
     if (!brandName.trim()) next.brand = 'Elegí o escribí una marca'
     if (!qtyNumber || qtyNumber <= 0) next.quantity = 'Cantidad inválida'
-    if (useOverride && (!overrideTotal || Number.isNaN(Number(overrideTotal.replace(',', '.'))))) {
-      next.overrideTotal = 'Importe inválido'
+    if (useOverride) {
+      const rate = parseNum(overrideRate)
+      if (!overrideRate.trim() || !Number.isFinite(rate) || rate < 0) next.overrideRate = 'Precio inválido'
+      const total = parseNum(overrideTotal)
+      if (!overrideTotal.trim() || !Number.isFinite(total) || total < 0) next.overrideTotal = 'Importe inválido'
     }
     setErrors(next)
     return Object.keys(next).length === 0
@@ -107,7 +169,14 @@ export function WorkFormModal() {
       quantity: qtyNumber,
       batch: batch.trim() || undefined,
       notes: notes.trim() || undefined,
-      overrideTotal: useOverride ? Number(overrideTotal.replace(',', '.')) : undefined,
+      // null le avisa a updateEntry que se destildó y hay que volver a la tarifa general.
+      overrideUnitRate: useOverride ? parseNum(overrideRate) : null,
+      overrideTotal: useOverride ? parseNum(overrideTotal) : null,
+    }
+    if (useOverride && syncGlobalRate) {
+      const rate = parseNum(overrideRate)
+      updateRates(type === 'H' ? { hRate: rate } : type === 'G' ? { gRate: rate } : { cboRate: rate })
+      push(`Tarifa general de ${type} actualizada a $${formatMoney(rate)}`)
     }
     if (editingEntry) {
       updateEntry(editingEntry.id, input)
@@ -137,7 +206,7 @@ export function WorkFormModal() {
               <button
                 key={t}
                 type="button"
-                onClick={() => setType(t)}
+                onClick={() => handleTypeChange(t)}
                 className={`rounded-lg border px-3 py-2.5 text-sm font-semibold transition ${
                   type === t
                     ? 'border-brand-600 bg-brand-600 text-white shadow-sm'
@@ -158,7 +227,7 @@ export function WorkFormModal() {
             step={1}
             className={inputClass}
             value={quantity}
-            onChange={(e) => setQuantity(e.target.value)}
+            onChange={(e) => handleQuantityChange(e.target.value)}
           />
         </Field>
 
@@ -177,10 +246,10 @@ export function WorkFormModal() {
           </datalist>
         </Field>
 
-        <Field label="Tarifa aplicada">
+        <Field label="Tarifa aplicada" hint={hasCustomRate && rateDiff !== 0 ? `Tarifa general: $${formatMoney(unitRate)}` : undefined}>
           <div className={`${inputClass} flex items-center justify-between bg-ink-50 dark:bg-ink-800/60`}>
             <span>
-              ${formatMoney(unitRate)} / {type}
+              ${formatMoney(effectiveRate)} / {type}
             </span>
             <span className="text-xs text-ink-400">{rates.currency}</span>
           </div>
@@ -204,18 +273,54 @@ export function WorkFormModal() {
           id="override"
           type="checkbox"
           checked={useOverride}
-          onChange={(e) => setUseOverride(e.target.checked)}
+          onChange={(e) => toggleOverride(e.target.checked)}
           className="h-4 w-4 rounded border-ink-300 text-brand-600 focus:ring-brand-500"
         />
         <label htmlFor="override" className="text-sm text-ink-600 dark:text-ink-300">
-          Usar un importe personalizado para este trabajo
+          Este trabajo se pagó a un precio distinto
         </label>
       </div>
       {useOverride && (
-        <div className="mt-2 max-w-[200px]">
-          <Field label="Importe personalizado (USD)" error={errors.overrideTotal}>
-            <input className={inputClass} value={overrideTotal} onChange={(e) => setOverrideTotal(e.target.value)} placeholder="0.00" />
-          </Field>
+        <div className="mt-3 rounded-xl border border-ink-200 p-4 dark:border-ink-700">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label={`Precio por ${type}`} error={errors.overrideRate}>
+              <input className={inputClass} value={overrideRate} onChange={(e) => handleRateChange(e.target.value)} placeholder="0.00" />
+            </Field>
+            <Field label={`Importe total (${rates.currency})`} error={errors.overrideTotal}>
+              <input className={inputClass} value={overrideTotal} onChange={(e) => handleTotalChange(e.target.value)} placeholder="0.00" />
+            </Field>
+          </div>
+
+          <p className="mt-2 text-xs text-ink-400">
+            Escribí en cualquiera de los dos y el otro se calcula solo.
+          </p>
+
+          {rateDiff !== 0 && (
+            <p className="mt-2 text-xs font-medium text-ink-600 dark:text-ink-300">
+              {rateDiff < 0 ? 'Bajó' : 'Subió'} ${formatMoney(Math.abs(rateDiff))} por {type} — de ${formatMoney(unitRate)} a $
+              {formatMoney(effectiveRate)}.{' '}
+              {qtyNumber > 0 && (
+                <>
+                  Por {qtyNumber} {type}: ${formatMoney(previewTotal)} en vez de ${formatMoney(computedTotal)}.
+                </>
+              )}
+            </p>
+          )}
+
+          {rateDiff !== 0 && (
+            <div className="mt-3 flex items-center gap-2">
+              <input
+                id="sync-rate"
+                type="checkbox"
+                checked={syncGlobalRate}
+                onChange={(e) => setSyncGlobalRate(e.target.checked)}
+                className="h-4 w-4 rounded border-ink-300 text-brand-600 focus:ring-brand-500"
+              />
+              <label htmlFor="sync-rate" className="text-sm text-ink-600 dark:text-ink-300">
+                Usar ${formatMoney(effectiveRate)} como tarifa general de {type} de ahora en más
+              </label>
+            </div>
+          )}
         </div>
       )}
 
