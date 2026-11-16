@@ -31,8 +31,10 @@ export function WorkFormModal() {
   const [batch, setBatch] = useState('')
   const [notes, setNotes] = useState('')
   const [useOverride, setUseOverride] = useState(false)
-  const [overrideRate, setOverrideRate] = useState('')
-  const [overrideTotal, setOverrideTotal] = useState('')
+  // El precio de referencia viene en dos partes: cuánto se paga y por cuántas
+  // unidades. Así "9 H = $35" sigue valiendo aunque se hayan hecho solo 6.
+  const [packPrice, setPackPrice] = useState('')
+  const [packSize, setPackSize] = useState('')
   const [syncGlobalRate, setSyncGlobalRate] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [duplicateAck, setDuplicateAck] = useState(false)
@@ -48,8 +50,9 @@ export function WorkFormModal() {
       setBatch(editingEntry.batch ?? '')
       setNotes(editingEntry.notes ?? '')
       setUseOverride(editingEntry.overridden)
-      setOverrideRate(editingEntry.overridden ? String(editingEntry.unitRate) : '')
-      setOverrideTotal(editingEntry.overridden ? String(editingEntry.total) : '')
+      // Se reconstruye como "el total que se cobró por esta cantidad", que da el mismo precio unitario.
+      setPackPrice(editingEntry.overridden ? String(editingEntry.total) : '')
+      setPackSize(editingEntry.overridden ? String(editingEntry.quantity) : '')
     } else {
       setDate(todayISO())
       setBrandName('')
@@ -58,8 +61,8 @@ export function WorkFormModal() {
       setBatch('')
       setNotes('')
       setUseOverride(false)
-      setOverrideRate('')
-      setOverrideTotal('')
+      setPackPrice('')
+      setPackSize('')
     }
     setSyncGlobalRate(false)
     setErrors({})
@@ -71,49 +74,35 @@ export function WorkFormModal() {
   const qtyNumber = Number(quantity.replace(',', '.'))
   const unitRate = getUnitRate(type, rates)
   const computedTotal = Number.isFinite(qtyNumber) && qtyNumber > 0 ? computeAmount(type, qtyNumber, rates) : 0
-  const customRate = parseNum(overrideRate)
+  const packPriceNum = parseNum(packPrice)
+  const packSizeNum = parseNum(packSize)
+  // Precio unitario sin redondear: si no, 9 x $3,89 daría $35,01 en vez de los $35 pactados.
+  const customRate = packSizeNum > 0 ? packPriceNum / packSizeNum : NaN
   const hasCustomRate = useOverride && Number.isFinite(customRate)
   const effectiveRate = hasCustomRate ? customRate : unitRate
   const rateDiff = hasCustomRate ? roundMoney(customRate - unitRate) : 0
-  const previewTotal = useOverride ? parseNum(overrideTotal) || 0 : computedTotal
-
-  /** El precio y el total quedan atados: tocás uno y el otro se recalcula. */
-  const handleRateChange = (value: string) => {
-    setOverrideRate(value)
-    const rate = parseNum(value)
-    if (Number.isFinite(rate) && qtyNumber > 0) setOverrideTotal(String(roundMoney(qtyNumber * rate)))
-  }
-
-  const handleTotalChange = (value: string) => {
-    setOverrideTotal(value)
-    const total = parseNum(value)
-    if (Number.isFinite(total) && qtyNumber > 0) setOverrideRate(String(roundMoney(total / qtyNumber)))
-  }
+  const previewTotal =
+    hasCustomRate && qtyNumber > 0 ? roundMoney(qtyNumber * customRate) : useOverride ? 0 : computedTotal
 
   const handleQuantityChange = (value: string) => {
+    // La cantidad ya no toca el precio de referencia: el total se deriva en cada render.
     setQuantity(value)
-    const qty = parseNum(value)
-    const rate = parseNum(overrideRate)
-    if (useOverride && Number.isFinite(qty) && qty > 0 && Number.isFinite(rate)) {
-      setOverrideTotal(String(roundMoney(qty * rate)))
-    }
   }
 
   const handleTypeChange = (next: WorkType) => {
     setType(next)
     // El precio propio es de un tipo concreto, así que al cambiarlo arrancamos de su tarifa general.
     if (!useOverride) return
-    const rate = getUnitRate(next, rates)
-    setOverrideRate(String(rate))
-    setOverrideTotal(String(qtyNumber > 0 ? roundMoney(qtyNumber * rate) : 0))
+    setPackPrice(String(getUnitRate(next, rates)))
+    setPackSize('1')
   }
 
   const toggleOverride = (on: boolean) => {
     setUseOverride(on)
     if (on) {
-      // Prellenamos con la tarifa general para que solo haya que corregir el número.
-      setOverrideRate(String(unitRate))
-      setOverrideTotal(String(computedTotal))
+      // Arranca como "la tarifa general, por unidad", para solo corregir los números.
+      setPackPrice(String(unitRate))
+      setPackSize('1')
     } else {
       setSyncGlobalRate(false)
     }
@@ -144,10 +133,8 @@ export function WorkFormModal() {
     if (!brandName.trim()) next.brand = 'Elegí o escribí una marca'
     if (!qtyNumber || qtyNumber <= 0) next.quantity = 'Cantidad inválida'
     if (useOverride) {
-      const rate = parseNum(overrideRate)
-      if (!overrideRate.trim() || !Number.isFinite(rate) || rate < 0) next.overrideRate = 'Precio inválido'
-      const total = parseNum(overrideTotal)
-      if (!overrideTotal.trim() || !Number.isFinite(total) || total < 0) next.overrideTotal = 'Importe inválido'
+      if (!packPrice.trim() || !Number.isFinite(packPriceNum) || packPriceNum < 0) next.packPrice = 'Precio inválido'
+      if (!packSize.trim() || !Number.isFinite(packSizeNum) || packSizeNum <= 0) next.packSize = 'Tiene que ser mayor a 0'
     }
     setErrors(next)
     return Object.keys(next).length === 0
@@ -170,11 +157,11 @@ export function WorkFormModal() {
       batch: batch.trim() || undefined,
       notes: notes.trim() || undefined,
       // null le avisa a updateEntry que se destildó y hay que volver a la tarifa general.
-      overrideUnitRate: useOverride ? parseNum(overrideRate) : null,
-      overrideTotal: useOverride ? parseNum(overrideTotal) : null,
+      overrideUnitRate: useOverride ? customRate : null,
+      overrideTotal: useOverride ? previewTotal : null,
     }
     if (useOverride && syncGlobalRate) {
-      const rate = parseNum(overrideRate)
+      const rate = roundMoney(customRate)
       updateRates(type === 'H' ? { hRate: rate } : type === 'G' ? { gRate: rate } : { cboRate: rate })
       push(`Tarifa general de ${type} actualizada a $${formatMoney(rate)}`)
     }
@@ -283,25 +270,27 @@ export function WorkFormModal() {
       {useOverride && (
         <div className="mt-3 rounded-xl border border-ink-200 p-4 dark:border-ink-700">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label={`Precio por cada ${type}`} error={errors.overrideRate}>
-              <input className={inputClass} value={overrideRate} onChange={(e) => handleRateChange(e.target.value)} placeholder="0.00" />
+            <Field label={`Se paga (${rates.currency})`} error={errors.packPrice}>
+              <input className={inputClass} value={packPrice} onChange={(e) => setPackPrice(e.target.value)} placeholder="35" />
             </Field>
-            <Field
-              label={qtyNumber > 0 ? `Precio por los ${qtyNumber} ${type} juntos` : `Precio total (${rates.currency})`}
-              error={errors.overrideTotal}
-            >
-              <input className={inputClass} value={overrideTotal} onChange={(e) => handleTotalChange(e.target.value)} placeholder="0.00" />
+            <Field label={`Por cada cuántos ${type}`} error={errors.packSize}>
+              <input className={inputClass} value={packSize} onChange={(e) => setPackSize(e.target.value)} placeholder="9" />
             </Field>
           </div>
 
           <p className="mt-2 text-xs text-ink-400">
-            Completá el que sepas y el otro se calcula solo.
+            Ej: si 9 {type} se pagan $35, poné <strong>35</strong> y <strong>9</strong>. Si el precio ya es por unidad, poné 1.
           </p>
 
           {hasCustomRate && qtyNumber > 0 && (
-            <p className="mt-2 text-sm font-semibold text-ink-900 dark:text-white">
-              {qtyNumber} {type} × ${formatMoney(effectiveRate)} c/u = ${formatMoney(previewTotal)}
-            </p>
+            <div className="mt-3 rounded-lg bg-ink-50 px-3 py-2.5 dark:bg-ink-800/60">
+              <p className="text-sm font-semibold text-ink-900 dark:text-white">
+                Hiciste {qtyNumber} {type} → ${formatMoney(previewTotal)}
+              </p>
+              <p className="mt-0.5 text-xs text-ink-400">
+                ${formatMoney(packPriceNum)} ÷ {packSizeNum} = ${formatMoney(effectiveRate)} por cada {type}
+              </p>
+            </div>
           )}
 
           {rateDiff !== 0 && (

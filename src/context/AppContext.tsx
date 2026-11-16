@@ -198,7 +198,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Un precio propio manda sobre la tarifa general: el total se recalcula con él.
     const hasRateOverride = typeof input.overrideUnitRate === 'number'
     const hasTotalOverride = typeof input.overrideTotal === 'number'
-    const unitRate = hasRateOverride ? roundMoney(input.overrideUnitRate as number) : getUnitRate(input.type, rates)
+    // Sin redondear: un precio de lote (35 por cada 9) da 3,8888... y redondearlo
+    // haría que 9 unidades sumen 35,01 en vez de los 35 pactados.
+    const unitRate = hasRateOverride ? (input.overrideUnitRate as number) : getUnitRate(input.type, rates)
     const total = hasTotalOverride
       ? roundMoney(input.overrideTotal as number)
       : hasRateOverride
@@ -247,7 +249,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const shouldRecompute = !hasRateOverride && !hasTotalOverride && (clearsOverride || changedShape)
 
         const unitRate = hasRateOverride
-          ? roundMoney(newRate)
+          ? newRate
           : shouldRecompute
             ? getUnitRate(type, rates)
             : e.unitRate
