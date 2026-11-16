@@ -283,17 +283,26 @@ export function WorkFormModal() {
       {useOverride && (
         <div className="mt-3 rounded-xl border border-ink-200 p-4 dark:border-ink-700">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label={`Precio por ${type}`} error={errors.overrideRate}>
+            <Field label={`Precio por cada ${type}`} error={errors.overrideRate}>
               <input className={inputClass} value={overrideRate} onChange={(e) => handleRateChange(e.target.value)} placeholder="0.00" />
             </Field>
-            <Field label={`Importe total (${rates.currency})`} error={errors.overrideTotal}>
+            <Field
+              label={qtyNumber > 0 ? `Precio por los ${qtyNumber} ${type} juntos` : `Precio total (${rates.currency})`}
+              error={errors.overrideTotal}
+            >
               <input className={inputClass} value={overrideTotal} onChange={(e) => handleTotalChange(e.target.value)} placeholder="0.00" />
             </Field>
           </div>
 
           <p className="mt-2 text-xs text-ink-400">
-            Escribí en cualquiera de los dos y el otro se calcula solo.
+            Completá el que sepas y el otro se calcula solo.
           </p>
+
+          {hasCustomRate && qtyNumber > 0 && (
+            <p className="mt-2 text-sm font-semibold text-ink-900 dark:text-white">
+              {qtyNumber} {type} × ${formatMoney(effectiveRate)} c/u = ${formatMoney(previewTotal)}
+            </p>
+          )}
 
           {rateDiff !== 0 && (
             <p className="mt-2 text-xs font-medium text-ink-600 dark:text-ink-300">
