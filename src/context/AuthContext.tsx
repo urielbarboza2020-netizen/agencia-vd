@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import type { Session, User } from '@supabase/supabase-js'
+import { isAuthRetryableFetchError, type AuthError, type Session, type User } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabaseClient'
 
 interface AuthContextValue {
@@ -18,10 +18,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
-      setLoading(false)
-    })
+    supabase.auth
+      .getSession()
+      .then(({ data }) => setSession(data.session))
+      // Si falla no hay sesión que restaurar: mostramos el login en vez de
+      // dejar la app colgada en el spinner para siempre.
+      .catch(() => setSession(null))
+      .finally(() => setLoading(false))
     const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession)
     })
@@ -34,13 +37,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password,
       options: fullName ? { data: { full_name: fullName } } : undefined,
     })
-    if (error) return { error: translateAuthError(error.message) }
+    if (error) return { error: translateAuthError(error) }
     return { needsConfirmation: !data.session }
   }
 
   const signIn: AuthContextValue['signIn'] = async (email, password) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) return { error: translateAuthError(error.message) }
+    if (error) return { error: translateAuthError(error) }
     return {}
   }
 
@@ -62,12 +65,25 @@ export function useAuth() {
   return ctx
 }
 
-function translateAuthError(message: string): string {
+function translateAuthError(error: AuthError): string {
+  const { status } = error
+
+  // Sin status no hubo respuesta HTTP: el navegador nunca llegó al servidor.
+  // Pasa si no hay internet o si el proyecto de Supabase está pausado o caído.
+  if (isAuthRetryableFetchError(error) || !status) {
+    return 'No se pudo conectar con el servidor. Revisá tu conexión e intentá de nuevo.'
+  }
+  if (status === 429) return 'Demasiados intentos. Esperá un momento antes de volver a probar'
+  if (status >= 500) return 'El servidor no está disponible ahora mismo. Probá de nuevo en unos minutos.'
+
   const map: Record<string, string> = {
     'Invalid login credentials': 'Email o contraseña incorrectos',
     'User already registered': 'Ya existe una cuenta con ese email',
     'Email not confirmed': 'Confirmá tu email antes de iniciar sesión',
     'Password should be at least 6 characters': 'La contraseña debe tener al menos 6 caracteres',
+    'Signup requires a valid password': 'Ingresá una contraseña válida',
+    'Unable to validate email address: invalid format': 'El email no tiene un formato válido',
+    'Email rate limit exceeded': 'Se alcanzó el límite de emails. Esperá un rato antes de reintentar',
   }
-  return map[message] ?? message
+  return map[error.message] ?? error.message
 }
